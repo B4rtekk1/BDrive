@@ -1,1 +1,0 @@
-Google log in currently  works only on android

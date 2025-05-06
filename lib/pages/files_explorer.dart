@@ -10,6 +10,7 @@ import 'package:logger/logger.dart';
 import 'package:serverapp/models/file_item.dart';
 import 'package:path/path.dart' as path;
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:path_provider/path_provider.dart';
 
 enum PopUpMenuOptions { delete, rename, copy, move }
 
@@ -149,6 +150,26 @@ class FilesExplorerPageState extends State<FilesExplorerPage> {
     }
   }
 
+  Future<String> _getDownloadsDirectoryPath() async {
+    if (Platform.isAndroid || Platform.isIOS) {
+      final directory = await getDownloadsDirectory();
+      if (directory == null) {
+        throw Exception("Nie można uzyskać folderu Pobrane");
+      }
+      return directory.path;
+    } else if (Platform.isWindows) {
+      final directory = await getApplicationDocumentsDirectory();
+      final downloadsPath = path.join(
+        Platform.environment['USERPROFILE'] ?? directory.path,
+        'Downloads',
+      );
+      return downloadsPath;
+    } else {
+      final directory = await getDownloadsDirectory() ?? await getApplicationDocumentsDirectory();
+      return directory.path;
+    }
+  }
+
   void _downloadFile(String filename) async {
     setState(() => downloadProgress[filename] = 0.0);
 
@@ -163,15 +184,6 @@ class FilesExplorerPageState extends State<FilesExplorerPage> {
           fileName = '$fileName$extension';
         }
       }
-
-      final response = await widget.apiService.downloadFileAsBytes(
-        filename,
-        onProgress: (received, total) {
-          if (total != -1 && mounted) {
-            setState(() => downloadProgress[filename] = received / total);
-          }
-        },
-      );
 
       if (Platform.isAndroid && !await _requestStoragePermissions()) {
         if (mounted) {
@@ -188,23 +200,32 @@ class FilesExplorerPageState extends State<FilesExplorerPage> {
         return;
       }
 
-      String? result = await FilePicker.platform.saveFile(
-        dialogTitle: 'Wybierz lokalizację zapisu dla $fileName',
-        fileName: fileName,
-        bytes: response,
+      final response = await widget.apiService.downloadFileAsBytes(
+        filename,
+        onProgress: (received, total) {
+          if (total != -1 && mounted) {
+            setState(() => downloadProgress[filename] = received / total);
+          }
+        },
       );
 
-      if (result == null) {
-        throw Exception("Nie wybrano lokalizacji zapisu");
+      final downloadsPath = await _getDownloadsDirectoryPath();
+      final savePath = path.join(downloadsPath, fileName);
+
+      final directory = Directory(downloadsPath);
+      if (!await directory.exists()) {
+        await directory.create(recursive: true);
       }
 
-      File downloadedFile = File(result);
-      if (await downloadedFile.exists() && await downloadedFile.length() > 0) {
+      final file = File(savePath);
+      await file.writeAsBytes(response);
+
+      if (await file.exists() && await file.length() > 0) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Pobrano: $fileName")),
+          SnackBar(content: Text("Pobrano: $fileName do folderu Pobrane")),
         );
-        final openResult = await OpenFile.open(result);
+        final openResult = await OpenFile.open(savePath);
         if (openResult.type != ResultType.done && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text("Nie można otworzyć pliku: ${openResult.message}")),
