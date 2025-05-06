@@ -43,3 +43,9 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+.env
+analysis_options.yaml
+devtools_options.yaml
+pubspec.lock
+pubspec.yaml
+/android/app/google-services.json
